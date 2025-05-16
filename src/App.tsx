@@ -10,6 +10,9 @@ import {
   Heading,
   useToast,
   Link,
+  Grid,
+  GridItem,
+  Text,
 } from '@chakra-ui/react';
 import { useExtractColors } from 'react-extract-colors';
 
@@ -49,103 +52,156 @@ function App() {
 
   return (
     <ChakraProvider>
-      <Box minH="100vh" bg="gray.50">
-        <Container maxW="container.md" pt={10}>
-          <Flex direction="column" align="center" textAlign="center">
-            <Heading mb={6} fontSize="4xl" color="gray.700">
-              Meridian Art Viewer
-            </Heading>
-            <Box mb={6} w="100%" maxW="400px">
-              <Input
-                placeholder="Enter artwork ID (e.g., 42, 547, 801)"
-                value={artworkId}
-                onChange={(e) => setArtworkId(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    fetchArtwork();
-                  }
-                }}
-                size="lg"
-                type="number"
-                min={0}
-                max={999}
-                bg="white"
-                boxShadow="sm"
-              />
-              <Button
-                onClick={fetchArtwork}
-                mt={4}
-                size="lg"
-                colorScheme="blue"
-                w="100%"
-                boxShadow="sm"
-                isLoading={loading}
-              >
-                View Artwork
-              </Button>
-            </Box>
-            {artworkUrl && (
-              <Box
-                borderRadius="lg"
-                overflow="hidden"
-                boxShadow="xl"
-                bg="white"
-                p={4}
-                maxW="100%"
-                w="auto"
-              >
-                <Image
-                  src={artworkUrl}
-                  alt={`Meridian Artwork #${artworkId}`}
-                  maxH="600px"
-                  w="auto"
-                  objectFit="contain"
-                />
-                <Link
-                  href={`https://www.artblocks.io/token/163000${artworkId.padStart(3, '0')}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  color="blue.500"
-                  textAlign="center"
-                  display="block"
-                  mt={2}
-                  mb={4}
+      <Box minH="100vh" bg="gray.50" py={8}>
+        <Container maxW="container.xl">
+          <Grid templateColumns={{ base: "1fr", md: "350px 1fr" }} gap={8}>
+            {/* Left Column - Input and Info */}
+            <GridItem>
+              <Box position="sticky" top={8}>
+                <Heading as="h1" size="lg" mb={6} color="gray.700">
+                  Meridian Art Viewer
+                </Heading>
+                <Box 
+                  bg="white" 
+                  p={6} 
+                  borderRadius="lg" 
+                  boxShadow="sm"
+                  border="1px"
+                  borderColor="gray.100"
                 >
-                  View on Art Blocks
-                </Link>
-                {/* Main color swatches */}
-                {colors.length > 0 && (
-                  <Box>
-                    <Heading size="sm" mb={3} color="gray.600">Main Colors</Heading>
-                    <Flex justify="center" gap={3}>
-                      {colors.map((color, index) => (
-                        <Box key={index}>
-                          <Box
-                            w="50px"
-                            h="50px"
-                            borderRadius="md"
-                            bg={color}
-                            boxShadow="md"
-                            border="1px solid"
-                            borderColor="gray.200"
-                            mb={2}
-                          />
-                          <Box
-                            fontSize="xs"
-                            color="gray.600"
-                            fontFamily="mono"
-                            textAlign="center"
-                          >
-                            {color.toUpperCase()}
-                          </Box>
-                        </Box>
-                      ))}
-                    </Flex>
-                  </Box>
-                )}
+                  <Text mb={4} color="gray.600" fontSize="sm">
+                    Enter an artwork ID between 0 and 999 to view the Meridian artwork and its color palette.
+                  </Text>
+                  <Input
+                    placeholder="Enter artwork ID"
+                    value={artworkId}
+                    onChange={(e) => setArtworkId(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        fetchArtwork();
+                      }
+                    }}
+                    size="lg"
+                    type="number"
+                    min={0}
+                    max={999}
+                    bg="white"
+                    boxShadow="sm"
+                    mb={4}
+                  />
+                  <Button
+                    onClick={fetchArtwork}
+                    size="lg"
+                    colorScheme="blue"
+                    w="100%"
+                    boxShadow="sm"
+                    isLoading={loading}
+                  >
+                    View Artwork
+                  </Button>
+                  {artworkId && (
+                    <Text mt={4} fontSize="sm" color="gray.500" textAlign="center">
+                      Viewing Meridian #{artworkId.padStart(3, '0')}
+                    </Text>
+                  )}
+                </Box>
               </Box>
-            )}
-          </Flex>
+            </GridItem>
+
+            {/* Right Column - Artwork and Colors */}
+            <GridItem>
+              {artworkUrl ? (
+                <Box
+                  bg="white"
+                  borderRadius="lg"
+                  overflow="hidden"
+                  boxShadow="sm"
+                  border="1px"
+                  borderColor="gray.100"
+                >
+                  <Box p={6}>
+                    <Image
+                      src={artworkUrl}
+                      alt={`Meridian Artwork #${artworkId}`}
+                      w="100%"
+                      h="auto"
+                      objectFit="contain"
+                      borderRadius="md"
+                    />
+                  </Box>
+
+                  <Box borderTop="1px" borderColor="gray.100" p={6}>
+                    <Flex justify="space-between" align="center" mb={6}>
+                      <Link
+                        href={`https://www.artblocks.io/token/0xa7d8d9ef8d8ce8992df33d8b8cf4aebabd5bd270/163000${artworkId.padStart(3, '0')}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        color="blue.500"
+                        fontSize="sm"
+                      >
+                        View on Art Blocks →
+                      </Link>
+                      <Text color="gray.500" fontSize="sm">
+                        Color Palette
+                      </Text>
+                    </Flex>
+
+                    {/* Color swatches */}
+                    {colors.length > 0 && (
+                      <Grid templateColumns="repeat(5, 1fr)" gap={4}>
+                        {colors.map((color, index) => (
+                          <Box key={index}>
+                            <Box
+                              w="100%"
+                              paddingBottom="100%"
+                              position="relative"
+                              mb={2}
+                            >
+                              <Box
+                                position="absolute"
+                                top={0}
+                                left={0}
+                                right={0}
+                                bottom={0}
+                                borderRadius="md"
+                                bg={color}
+                                boxShadow="md"
+                                border="1px solid"
+                                borderColor="gray.200"
+                              />
+                            </Box>
+                            <Text
+                              fontSize="xs"
+                              color="gray.600"
+                              fontFamily="mono"
+                              textAlign="center"
+                            >
+                              {color.toUpperCase()}
+                            </Text>
+                          </Box>
+                        ))}
+                      </Grid>
+                    )}
+                  </Box>
+                </Box>
+              ) : (
+                <Flex 
+                  height="100%" 
+                  align="center" 
+                  justify="center"
+                  bg="white"
+                  borderRadius="lg"
+                  border="1px"
+                  borderColor="gray.100"
+                  p={8}
+                >
+                  <Text color="gray.500">
+                    Enter an artwork ID to view the Meridian artwork
+                  </Text>
+                </Flex>
+              )}
+            </GridItem>
+          </Grid>
         </Container>
       </Box>
     </ChakraProvider>
