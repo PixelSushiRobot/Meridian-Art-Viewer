@@ -92,6 +92,11 @@ function App() {
                 placeholder="Enter artwork ID (e.g., 42, 547, 801)"
                 value={artworkId}
                 onChange={(e) => setArtworkId(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    fetchArtwork();
+                  }
+                }}
                 size="lg"
                 type="number"
                 min={0}
