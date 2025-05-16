@@ -13,6 +13,7 @@ import {
   Grid,
   GridItem,
   Text,
+  Divider,
 } from '@chakra-ui/react';
 import { useExtractColors } from 'react-extract-colors';
 
@@ -21,11 +22,19 @@ function App() {
   const [artworkUrl, setArtworkUrl] = useState('');
   const toast = useToast();
 
-  // Extract colors from the artwork with maxColors set to 5
-  const { colors, loading } = useExtractColors(artworkUrl, {
-    maxColors: 5,
+  // Extract background color (using first dominant color)
+  const { colors: [backgroundColor = '#FFFFFF'] = ['#FFFFFF'] } = useExtractColors(artworkUrl, {
+    maxColors: 1,
     format: 'hex',
     sortBy: 'dominance'
+  });
+
+  // Extract key colors (excluding background color)
+  const { colors: keyColors = [], loading } = useExtractColors(artworkUrl, {
+    maxColors: 5,
+    format: 'hex',
+    sortBy: 'vibrance', // Use vibrance to find more distinctive colors
+    colorSimilarityThreshold: 100 // Increase threshold to avoid similar colors
   });
 
   const fetchArtwork = () => {
@@ -146,10 +155,53 @@ function App() {
                       </Text>
                     </Flex>
 
-                    {/* Color swatches */}
-                    {colors.length > 0 && (
+                    {/* Background Color */}
+                    <Box mb={4}>
+                      <Text fontSize="sm" color="gray.600" mb={2}>
+                        Background Color
+                      </Text>
+                      <Grid templateColumns="repeat(1, 1fr)" gap={4}>
+                        <Box>
+                          <Box
+                            w="100%"
+                            paddingBottom="20%"
+                            position="relative"
+                            mb={2}
+                          >
+                            <Box
+                              position="absolute"
+                              top={0}
+                              left={0}
+                              right={0}
+                              bottom={0}
+                              borderRadius="md"
+                              bg={backgroundColor}
+                              boxShadow="md"
+                              border="1px solid"
+                              borderColor="gray.200"
+                            />
+                          </Box>
+                          <Text
+                            fontSize="xs"
+                            color="gray.600"
+                            fontFamily="mono"
+                            textAlign="center"
+                          >
+                            {backgroundColor.toUpperCase()}
+                          </Text>
+                        </Box>
+                      </Grid>
+                    </Box>
+
+                    <Divider my={6} />
+
+                    {/* Key Colors */}
+                    <Box>
+                      <Text fontSize="sm" color="gray.600" mb={2}>
+                        Key Colors
+                      </Text>
                       <Grid templateColumns="repeat(5, 1fr)" gap={4}>
-                        {colors.map((color, index) => (
+                        {keyColors.map((color, index) => (
                           <Box key={index}>
                             <Box
                               w="100%"
@@ -181,7 +233,7 @@ function App() {
                           </Box>
                         ))}
                       </Grid>
-                    )}
+                    </Box>
                   </Box>
                 </Box>
               ) : (
