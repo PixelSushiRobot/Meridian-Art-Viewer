@@ -11,19 +11,29 @@ import {
   Heading,
   useToast,
   Link,
+  keyframes,
 } from '@chakra-ui/react';
+import { useExtractColors } from 'react-extract-colors';
 
 function App() {
   const [artworkId, setArtworkId] = useState('');
   const [artworkUrl, setArtworkUrl] = useState('');
-  const [loading, setLoading] = useState(false);
   const toast = useToast();
 
-  const fetchArtwork = async () => {
-    if (!artworkId.trim()) {
+  // Extract colors from the artwork
+  const { colors, dominantColor, darkerColor, lighterColor, loading } = useExtractColors(artworkUrl);
+
+  const gradientAnimation = keyframes`
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  `;
+
+  const fetchArtwork = () => {
+    if (!artworkId || isNaN(Number(artworkId)) || Number(artworkId) < 0 || Number(artworkId) > 999) {
       toast({
-        title: 'Error',
-        description: 'Please enter an artwork ID (0-999)',
+        title: 'Invalid artwork ID',
+        description: 'Please enter a number between 0 and 999',
         status: 'error',
         duration: 3000,
         isClosable: true,
@@ -31,63 +41,54 @@ function App() {
       return;
     }
 
-    // Convert input to a number and validate
-    const tokenId = parseInt(artworkId, 10);
-    if (isNaN(tokenId) || tokenId < 0 || tokenId > 999) {
-      toast({
-        title: 'Error',
-        description: 'Please enter a valid artwork ID between 0 and 999',
-        status: 'error',
-        duration: 3000,
-        isClosable: true,
-      });
-      return;
-    }
-
-    setLoading(true);
-    try {
-      // Format the token ID with leading zeros
-      const formattedTokenId = tokenId.toString().padStart(3, '0');
-      console.log('Formatted token ID:', formattedTokenId);
-      
-      // Use the Art Blocks token endpoint
-      const imageUrl = `https://media.artblocks.io/163000${formattedTokenId}.png`;
-      console.log('Image URL:', imageUrl);
-      setArtworkUrl(imageUrl);
-      
-      toast({
-        title: 'Success',
-        description: 'Artwork loaded successfully',
-        status: 'success',
-        duration: 3000,
-        isClosable: true,
-      });
-    } catch (error: any) {
-      console.error('Error loading artwork:', error);
-      const errorMessage = error.message || 'Failed to load artwork';
-      
-      toast({
-        title: 'Error',
-        description: `Failed to load artwork: ${errorMessage}. Please check the ID and try again.`,
-        status: 'error',
-        duration: 5000,
-        isClosable: true,
-      });
-      setArtworkUrl('');
-    } finally {
-      setLoading(false);
-    }
+    // Format the token ID with leading zeros
+    const formattedTokenId = artworkId.toString().padStart(3, '0');
+    console.log('Formatted token ID:', formattedTokenId);
+    
+    // Use the Art Blocks token endpoint
+    const imageUrl = `https://media.artblocks.io/163000${formattedTokenId}.png`;
+    console.log('Image URL:', imageUrl);
+    setArtworkUrl(imageUrl);
   };
 
   return (
     <ChakraProvider>
-      <Container maxW="container.md" py={8}>
-        <Flex direction="column" gap={6}>
-          <Heading>Meridian Art Viewer</Heading>
-          <Text>Enter an artwork ID between 0 and 999</Text>
-          
-          <Box width="100%">
-            <Flex direction="column" gap={4}>
+      <Box
+        minH="100vh"
+        bg={loading || !colors.length ? "gray.100" : `linear-gradient(45deg, ${dominantColor}, ${darkerColor}, ${lighterColor})`}
+        backgroundSize="400% 400%"
+        animation={`${gradientAnimation} 15s ease infinite`}
+        transition="background 0.5s ease"
+        position="relative"
+      >
+        {/* Blurred background using extracted colors */}
+        {artworkUrl && colors.length > 0 && (
+          <Box
+            position="absolute"
+            top="0"
+            left="0"
+            right="0"
+            bottom="0"
+            backgroundImage={`url(${artworkUrl})`}
+            backgroundSize="cover"
+            backgroundPosition="center"
+            filter="blur(100px) brightness(0.7)"
+            opacity="0.4"
+            zIndex="0"
+          />
+        )}
+        
+        <Container maxW="container.md" pt={10} position="relative" zIndex="1">
+          <Flex direction="column" align="center" textAlign="center">
+            <Heading
+              mb={6}
+              fontSize="4xl"
+              color={artworkUrl && colors.length > 0 ? "white" : "gray.700"}
+              textShadow={artworkUrl && colors.length > 0 ? "1px 1px 4px rgba(0,0,0,0.3)" : "none"}
+            >
+              Meridian Art Viewer
+            </Heading>
+            <Box mb={6} w="100%" maxW="400px">
               <Input
                 placeholder="Enter artwork ID (e.g., 42, 547, 801)"
                 value={artworkId}
@@ -101,47 +102,72 @@ function App() {
                 type="number"
                 min={0}
                 max={999}
+                bg="white"
+                boxShadow="sm"
               />
               <Button
-                colorScheme="blue"
                 onClick={fetchArtwork}
-                isLoading={loading}
-                width="100%"
+                mt={4}
+                size="lg"
+                colorScheme="blue"
+                w="100%"
+                boxShadow="sm"
               >
                 View Artwork
               </Button>
-            </Flex>
-          </Box>
-
-          {artworkUrl && (
-            <Box
-              width="100%"
-              borderRadius="md"
-              overflow="hidden"
-              boxShadow="lg"
-            >
-              <Image
-                src={artworkUrl}
-                alt="Meridian Artwork"
-                width="100%"
-                height="auto"
-              />
-              <Link
-                href={`https://www.artblocks.io/token/163000${artworkId.padStart(3, '0')}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                color="blue.500"
-                textAlign="center"
-                display="block"
-                mt={2}
-                mb={4}
-              >
-                View on Art Blocks
-              </Link>
             </Box>
-          )}
-        </Flex>
-      </Container>
+            {artworkUrl && (
+              <Box
+                borderRadius="lg"
+                overflow="hidden"
+                boxShadow="xl"
+                bg="white"
+                p={4}
+                maxW="100%"
+                w="auto"
+                position="relative"
+              >
+                <Image
+                  src={artworkUrl}
+                  alt={`Meridian Artwork #${artworkId}`}
+                  maxH="600px"
+                  w="auto"
+                  objectFit="contain"
+                />
+                <Link
+                  href={`https://www.artblocks.io/token/163000${artworkId.padStart(3, '0')}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  color="blue.500"
+                  textAlign="center"
+                  display="block"
+                  mt={2}
+                  mb={4}
+                >
+                  View on Art Blocks
+                </Link>
+                {/* Color swatches */}
+                {colors.length > 0 && (
+                  <Flex justify="center" gap={2} mt={4}>
+                    {colors.slice(0, 5).map((color, index) => (
+                      <Box
+                        key={index}
+                        w="40px"
+                        h="40px"
+                        borderRadius="md"
+                        bg={color}
+                        boxShadow="sm"
+                        border="1px solid"
+                        borderColor="gray.200"
+                      />
+                    ))}
+                  </Flex>
+                )}
+              </Box>
+            )}
+          </Flex>
+        </Container>
+      </Box>
     </ChakraProvider>
   );
 }
