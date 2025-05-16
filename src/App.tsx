@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   ChakraProvider,
   Box,
@@ -15,27 +15,97 @@ import {
   Text,
   Divider,
 } from '@chakra-ui/react';
-import { useExtractColors } from 'react-extract-colors';
+import ColorThief from 'colorthief';
 
 function App() {
   const [artworkId, setArtworkId] = useState('');
   const [artworkUrl, setArtworkUrl] = useState('');
+  const [backgroundColor, setBackgroundColor] = useState('#FFFFFF');
+  const [keyColors, setKeyColors] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
   const toast = useToast();
 
-  // Extract background color (using first dominant color)
-  const { colors: [backgroundColor = '#FFFFFF'] = ['#FFFFFF'] } = useExtractColors(artworkUrl, {
-    maxColors: 1,
-    format: 'hex',
-    sortBy: 'dominance'
-  });
+  // Convert RGB array to HEX
+  const rgbToHex = useCallback((r: number, g: number, b: number): string => {
+    return '#' + [r, g, b].map(x => {
+      const hex = x.toString(16);
+      return hex.length === 1 ? '0' + hex : hex;
+    }).join('');
+  }, []);
 
-  // Extract key colors (excluding background color)
-  const { colors: keyColors = [], loading } = useExtractColors(artworkUrl, {
-    maxColors: 5,
-    format: 'hex',
-    sortBy: 'vibrance', // Use vibrance to find more distinctive colors
-    colorSimilarityThreshold: 100 // Increase threshold to avoid similar colors
-  });
+  // Extract colors using ColorThief
+  const extractColors = useCallback(async (imageUrl: string) => {
+    setLoading(true);
+    try {
+      const colorThief = new ColorThief();
+      const img = new Image();
+      img.crossOrigin = 'Anonymous';
+      
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+        img.src = imageUrl;
+      });
+
+      // Get the dominant color for background
+      const dominantColor = colorThief.getColor(img);
+      const bgColor = rgbToHex(...dominantColor);
+      setBackgroundColor(bgColor);
+
+      // Get palette for key colors (excluding colors too similar to background)
+      const palette = colorThief.getPalette(img, 8); // Get more colors than needed to filter
+      const keyColorSet = new Set<string>();
+      
+      // Helper function to calculate color difference
+      const getColorDifference = (color1: number[], color2: number[]): number => {
+        return Math.sqrt(
+          Math.pow(color1[0] - color2[0], 2) +
+          Math.pow(color1[1] - color2[1], 2) +
+          Math.pow(color1[2] - color2[2], 2)
+        );
+      };
+
+      // Filter colors that are too similar to background or each other
+      palette.forEach(color => {
+        const hexColor = rgbToHex(...color);
+        const diffFromBg = getColorDifference(color, dominantColor);
+        
+        // Only add colors that are different enough from background
+        if (diffFromBg > 50) {
+          // Check if color is different enough from already selected colors
+          const isDifferentEnough = Array.from(keyColorSet).every(existingHex => {
+            const existing = existingHex.match(/\w\w/g)?.map(h => parseInt(h, 16)) || [];
+            return getColorDifference(color, existing) > 50;
+          });
+
+          if (isDifferentEnough) {
+            keyColorSet.add(hexColor);
+          }
+        }
+      });
+
+      // Take the first 5 distinct colors
+      setKeyColors(Array.from(keyColorSet).slice(0, 5));
+    } catch (error) {
+      console.error('Error extracting colors:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to extract colors from the artwork',
+        status: 'error',
+        duration: 3000,
+        isClosable: true,
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [rgbToHex, toast]);
+
+  // Effect to extract colors when artwork URL changes
+  useEffect(() => {
+    if (artworkUrl) {
+      extractColors(artworkUrl);
+    }
+  }, [artworkUrl, extractColors]);
 
   const fetchArtwork = () => {
     if (!artworkId || isNaN(Number(artworkId)) || Number(artworkId) < 0 || Number(artworkId) > 999) {
@@ -136,6 +206,7 @@ function App() {
                       h="auto"
                       objectFit="contain"
                       borderRadius="md"
+                      crossOrigin="anonymous"
                     />
                   </Box>
 
