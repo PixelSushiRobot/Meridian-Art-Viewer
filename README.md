@@ -2,6 +2,8 @@
 
 A React-based web application for viewing Meridian artworks from the Art Blocks platform. This viewer allows users to explore Meridian artworks by entering token IDs between 0 and 999.
 
+🌐 **[View Live Demo](https://pixelsushirobot.github.io/Meridian-Art-Viewer)**
+
 ## Features
 
 - View Meridian artworks by entering token IDs (0-999)
