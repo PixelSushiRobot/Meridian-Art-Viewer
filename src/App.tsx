@@ -101,8 +101,44 @@ function App() {
       
       console.log('Extracted palette:', palette);
 
+      // First, analyze the image for white/near-white colors
+      const whiteAnalysisImg = new Image();
+      whiteAnalysisImg.crossOrigin = 'anonymous';
+      await new Promise((resolve, reject) => {
+        whiteAnalysisImg.onload = resolve;
+        whiteAnalysisImg.onerror = reject;
+        whiteAnalysisImg.src = imageUrl;
+      });
+
+      const whiteAnalysisCanvas = document.createElement('canvas');
+      const whiteAnalysisCtx = whiteAnalysisCanvas.getContext('2d')!;
+      whiteAnalysisCanvas.width = whiteAnalysisImg.width;
+      whiteAnalysisCanvas.height = whiteAnalysisImg.height;
+      whiteAnalysisCtx.drawImage(whiteAnalysisImg, 0, 0);
+
+      // Sample pixels to find white areas
+      const imageData = whiteAnalysisCtx.getImageData(0, 0, whiteAnalysisCanvas.width, whiteAnalysisCanvas.height).data;
+      let whitePixelCount = 0;
+      let totalPixels = 0;
+      const whiteThreshold = 245; // Threshold for considering a color as "white"
+      
+      for (let i = 0; i < imageData.length; i += 4) {
+        const r = imageData[i];
+        const g = imageData[i + 1];
+        const b = imageData[i + 2];
+        const brightness = (r + g + b) / 3;
+        
+        if (brightness >= whiteThreshold) {
+          whitePixelCount++;
+        }
+        totalPixels++;
+      }
+
+      // Calculate white color percentage
+      const whitePercentage = (whitePixelCount / totalPixels) * 100;
+      
       // Organize colors by category with priority for Meridian's style
-      const orderedColors = [
+      const standardColors = [
         palette.Vibrant?.hex,
         palette.DarkVibrant?.hex,
         palette.LightVibrant?.hex,
@@ -143,13 +179,19 @@ function App() {
 
         // 3. Apply Meridian-specific filters:
         // - Avoid colors that are too gray (low chroma)
-        // - Prefer colors within certain brightness range
+        // - Prefer colors within certain brightness range (excluding white)
         // - Ensure good separation between colors
-        return chroma > 5 && brightness >= 20 && brightness <= 235;
+        return chroma > 5 && brightness >= 20 && brightness < whiteThreshold;
       });
 
-      console.log('Ordered colors:', orderedColors);
-      setKeyColors(orderedColors);
+      // Add white as a key color if it's significant in the image
+      const significantWhiteThreshold = 5; // Minimum percentage to consider white as significant
+      const finalColors = whitePercentage >= significantWhiteThreshold
+        ? [...standardColors, '#FFFFFF']
+        : standardColors;
+
+      console.log('Ordered colors:', finalColors);
+      setKeyColors(finalColors);
 
     } catch (error) {
       console.error('Detailed error extracting colors:', error);
@@ -222,7 +264,8 @@ function App() {
     'Light Vibrant',
     'Muted',
     'Dark Muted',
-    'Light Muted'
+    'Light Muted',
+    'White' // Add white category
   ];
 
   return (
@@ -385,7 +428,7 @@ function App() {
                                 textAlign="center"
                                 mb={1}
                               >
-                                {colorCategories[index]}
+                                {color === '#FFFFFF' ? 'White' : colorCategories[index]}
                               </Text>
                               <Text
                                 fontSize="xs"
