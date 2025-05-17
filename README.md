@@ -1,6 +1,6 @@
 # Meridian Art Viewer
 
-A React-based web application for viewing Meridian artworks from the Art Blocks platform. This viewer allows users to explore Meridian artworks by entering token IDs between 0 and 999.
+A React-based web application for viewing Meridian artworks from the Art Blocks platform. This viewer allows users to explore Meridian artworks by entering token IDs between 0 and 999, with advanced color analysis features.
 
 🌐 **[View Live Demo](https://pixelsushirobot.github.io/Meridian-Art-Viewer)**
 
@@ -10,13 +10,23 @@ A React-based web application for viewing Meridian artworks from the Art Blocks 
 - Direct links to Art Blocks platform for each artwork
 - Responsive design using Chakra UI
 - Real-time artwork loading and display
-- Error handling and user feedback
+- Advanced color analysis:
+  - Accurate background color detection from artwork borders
+  - 8 distinct key colors extracted from the artwork
+  - Smart color difference calculation to ensure unique colors
+  - Optional white color detection
+- Image Simplification:
+  - Side-by-side view of original and simplified artwork
+  - Adjustable grid-based simplification
+  - Real-time color palette updates based on simplification level
+  - Customizable grid size (5-50 cells)
 
 ## Technologies Used
 
 - React
 - TypeScript
 - Chakra UI
+- Color Thief (for color extraction)
 - Create React App
 
 ## Getting Started
@@ -50,7 +60,22 @@ npm start
 
 1. Enter a token ID between 0 and 999 in the input field
 2. Click "View Artwork" to load the corresponding Meridian artwork
-3. Click "View on Art Blocks" to see the artwork on the official Art Blocks platform
+3. Use the simplification slider to adjust the grid size:
+   - Move left for more simplified view
+   - Move right for more detailed view
+4. Observe the color analysis:
+   - Background color (detected from artwork borders)
+   - 8 key colors extracted from the simplified artwork
+5. Click "View on Art Blocks" to see the artwork on the official Art Blocks platform
+
+## Color Analysis Details
+
+The application performs sophisticated color analysis:
+- Background color is detected by analyzing the artwork's border pixels
+- Key colors are extracted from the simplified version of the artwork
+- Color difference calculations ensure distinct and representative colors
+- White is only included when it's a significant part of the artwork
+- The palette updates in real-time as you adjust the simplification level
 
 ## Contributing
 
