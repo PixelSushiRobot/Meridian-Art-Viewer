@@ -91,13 +91,17 @@ function App() {
       console.log('Detected background color:', mostCommonColor);
       setBackgroundColor(mostCommonColor);
 
-      // Extract palette colors
-      const v = Vibrant.from(imageUrl);
+      // Extract palette colors with custom settings for Meridian
+      const v = Vibrant.from(imageUrl)
+        .quality(1) // Highest quality for better color sampling
+        .maxColorCount(32) // Increase color samples to catch subtle variations
+        .useQuantizer('mmcq'); // Using MMCQ quantizer for better subtle color detection
+
       const palette = await v.getPalette();
       
       console.log('Extracted palette:', palette);
 
-      // Organize colors by category (6 colors only)
+      // Organize colors by category with priority for Meridian's style
       const orderedColors = [
         palette.Vibrant?.hex,
         palette.DarkVibrant?.hex,
@@ -105,7 +109,44 @@ function App() {
         palette.Muted?.hex,
         palette.DarkMuted?.hex,
         palette.LightMuted?.hex
-      ].filter(Boolean) as string[];
+      ].filter((color): color is string => {
+        if (!color) return false;
+        
+        // Convert hex to RGB to check color properties
+        const rgb = color.match(/\w\w/g)?.map((x: string) => parseInt(x, 16)) || [];
+        if (rgb.length !== 3) return false;
+
+        // Calculate color properties
+        const [r, g, b] = rgb;
+        
+        // For Meridian's style:
+        // 1. Check if colors are too similar to already selected ones
+        const tolerance = 5;
+        for (const existingColor of keyColors) {
+          const hex = existingColor || '';
+          const existingRgb = hex.match(/\w\w/g)?.map((x: string) => parseInt(x, 16)) || [];
+          if (existingRgb.length === 3) {
+            const dr = Math.abs(r - existingRgb[0]);
+            const dg = Math.abs(g - existingRgb[1]);
+            const db = Math.abs(b - existingRgb[2]);
+            if (dr < tolerance && dg < tolerance && db < tolerance) {
+              return false;
+            }
+          }
+        }
+
+        // 2. Calculate additional color properties
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        const chroma = max - min;
+        const brightness = (r + g + b) / 3;
+
+        // 3. Apply Meridian-specific filters:
+        // - Avoid colors that are too gray (low chroma)
+        // - Prefer colors within certain brightness range
+        // - Ensure good separation between colors
+        return chroma > 5 && brightness >= 20 && brightness <= 235;
+      });
 
       console.log('Ordered colors:', orderedColors);
       setKeyColors(orderedColors);
