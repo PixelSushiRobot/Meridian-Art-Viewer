@@ -181,17 +181,30 @@ function App() {
       // Build the final color array including black and white when significant
       const finalColors: string[] = [];
       
-      // Add black if significant
+      // Add black if significant and actually present
       if (blackPercentage >= significantThreshold) {
-        finalColors.push('#000000');
+        // Only add pure black or very close to black
+        const pureBlack = '#000000';
+        finalColors.push(pureBlack);
       }
       
-      // Add standard colors
-      finalColors.push(...standardColors);
+      // Add standard colors, ensuring no browns or dark colors are labeled as black
+      finalColors.push(...standardColors.filter(color => {
+        const rgb = color.match(/\w\w/g)?.map((x: string) => parseInt(x, 16)) || [];
+        if (rgb.length !== 3) return false;
+
+        const [r, g, b] = rgb;
+        const brightness = (r + g + b) / 3;
+        
+        // Ensure we don't include colors that are too close to black
+        // This prevents dark browns and other dark colors from being filtered
+        return brightness > blackThreshold;
+      }));
       
       // Add white if significant
       if (whitePercentage >= significantThreshold) {
-        finalColors.push('#FFFFFF');
+        const pureWhite = '#FFFFFF';
+        finalColors.push(pureWhite);
       }
 
       console.log('Color percentages:', { white: whitePercentage, black: blackPercentage });
@@ -275,10 +288,15 @@ function App() {
     'White'
   ];
 
+  // Helper function to get color label
   const getColorLabel = (color: string, index: number) => {
+    // Only label as black if it's pure black or extremely close to black
     if (color === '#000000') return 'Black';
     if (color === '#FFFFFF') return 'White';
-    return colorCategories[index];
+
+    // For all other colors, use the vibrant categories
+    const standardColorIndex = keyColors.indexOf(color) - (keyColors.includes('#000000') ? 1 : 0);
+    return colorCategories[standardColorIndex + 1]; // +1 to skip the 'Black' category if color isn't black
   };
 
   return (
