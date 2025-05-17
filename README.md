@@ -2,6 +2,8 @@
 
 A React-based viewer for Art Blocks' Meridian collection that analyzes and visualizes the color composition of each artwork.
 
+**Live Demo**: [https://pixelsushirobot.github.io/Meridian-Art-Viewer/](https://pixelsushirobot.github.io/Meridian-Art-Viewer/)
+
 ## Features
 
 - View any Meridian artwork by ID (0-999)
@@ -24,7 +26,7 @@ A React-based viewer for Art Blocks' Meridian collection that analyzes and visua
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/Meridian-Art-Viewer.git
+git clone https://github.com/PixelSushiRobot/Meridian-Art-Viewer.git
 cd Meridian-Art-Viewer
 ```
 
@@ -68,4 +70,8 @@ npm start
 
 ## License
 
-MIT License - See LICENSE file for details
+MIT License - See [LICENSE](LICENSE) file for details
+
+## Author
+
+[PixelSushiRobot](https://github.com/PixelSushiRobot)
