@@ -15,39 +15,7 @@ import {
   GridItem,
   Text,
   Divider,
-  Slider,
-  SliderTrack,
-  SliderFilledTrack,
-  SliderThumb,
-  SliderMark,
 } from '@chakra-ui/react';
-
-interface RGB {
-  r: number;
-  g: number;
-  b: number;
-}
-
-interface HSL {
-  h: number;
-  s: number;
-  l: number;
-}
-
-interface Lab {
-  l: number;
-  a: number;
-  b: number;
-}
-
-interface ColorScore {
-  rgb: RGB;
-  hex: string;
-  hsl: HSL;
-  population: number;
-  score: number;
-  category: 'vibrant' | 'muted' | 'light' | 'dark';
-}
 
 function App() {
   const [artworkId, setArtworkId] = useState('');
@@ -55,202 +23,8 @@ function App() {
   const [backgroundColor, setBackgroundColor] = useState('#FFFFFF');
   const [keyColors, setKeyColors] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
-  const [gridSize, setGridSize] = useState(20);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const toast = useToast();
-
-  // Convert RGB to HSL
-  const rgbToHsl = (r: number, g: number, b: number): HSL => {
-    r /= 255;
-    g /= 255;
-    b /= 255;
-
-    const max = Math.max(r, g, b);
-    const min = Math.min(r, g, b);
-    let h = 0;
-    let s = 0;
-    const l = (max + min) / 2;
-
-    if (max !== min) {
-      const d = max - min;
-      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-      
-      switch (max) {
-        case r:
-          h = (g - b) / d + (g < b ? 6 : 0);
-          break;
-        case g:
-          h = (b - r) / d + 2;
-          break;
-        case b:
-          h = (r - g) / d + 4;
-          break;
-      }
-      
-      h /= 6;
-    }
-
-    return { h: h * 360, s: s * 100, l: l * 100 };
-  };
-
-  // Convert RGB to HEX
-  const rgbToHex = useCallback(({ r, g, b }: RGB): string => {
-    return '#' + [r, g, b].map(x => {
-      const hex = x.toString(16);
-      return hex.length === 1 ? '0' + hex : hex;
-    }).join('');
-  }, []);
-
-  // Convert RGB to LAB color space
-  const rgbToLab = (rgb: RGB): Lab => {
-    // Convert RGB to XYZ
-    let r = rgb.r / 255;
-    let g = rgb.g / 255;
-    let b = rgb.b / 255;
-
-    r = r > 0.04045 ? Math.pow((r + 0.055) / 1.055, 2.4) : r / 12.92;
-    g = g > 0.04045 ? Math.pow((g + 0.055) / 1.055, 2.4) : g / 12.92;
-    b = b > 0.04045 ? Math.pow((b + 0.055) / 1.055, 2.4) : b / 12.92;
-
-    const x = (r * 0.4124 + g * 0.3576 + b * 0.1805) * 100;
-    const y = (r * 0.2126 + g * 0.7152 + b * 0.0722) * 100;
-    const z = (r * 0.0193 + g * 0.1192 + b * 0.9505) * 100;
-
-    // Convert XYZ to Lab
-    const xn = 95.047;
-    const yn = 100.0;
-    const zn = 108.883;
-
-    const xyz = [x / xn, y / yn, z / zn];
-    for (let i = 0; i < 3; i++) {
-      xyz[i] = xyz[i] > 0.008856 
-        ? Math.pow(xyz[i], 1/3) 
-        : (7.787 * xyz[i]) + 16/116;
-    }
-
-    return {
-      l: (116 * xyz[1]) - 16,
-      a: 500 * (xyz[0] - xyz[1]),
-      b: 200 * (xyz[1] - xyz[2])
-    };
-  };
-
-  // Calculate CIEDE2000 color difference
-  const getColorDistance = (color1: RGB, color2: RGB): number => {
-    const lab1 = rgbToLab(color1);
-    const lab2 = rgbToLab(color2);
-
-    const deltaL = lab2.l - lab1.l;
-    const l = (lab1.l + lab2.l) / 2;
-    const c1 = Math.sqrt(lab1.a * lab1.a + lab1.b * lab1.b);
-    const c2 = Math.sqrt(lab2.a * lab2.a + lab2.b * lab2.b);
-    const c = (c1 + c2) / 2;
-
-    const a1p = lab1.a + (lab1.a / 2) * (1 - Math.sqrt(Math.pow(c, 7) / (Math.pow(c, 7) + Math.pow(25, 7))));
-    const a2p = lab2.a + (lab2.a / 2) * (1 - Math.sqrt(Math.pow(c, 7) / (Math.pow(c, 7) + Math.pow(25, 7))));
-
-    const c1p = Math.sqrt(a1p * a1p + lab1.b * lab1.b);
-    const c2p = Math.sqrt(a2p * a2p + lab2.b * lab2.b);
-    const cp = (c1p + c2p) / 2;
-
-    const deltaC = c2p - c1p;
-    const h1p = Math.atan2(lab1.b, a1p);
-    const h2p = Math.atan2(lab2.b, a2p);
-    let dhp = h2p - h1p;
-
-    if (dhp > Math.PI) dhp -= 2 * Math.PI;
-    if (dhp < -Math.PI) dhp += 2 * Math.PI;
-
-    const dH = 2 * Math.sqrt(c1p * c2p) * Math.sin(dhp / 2);
-
-    const sl = 1 + (0.015 * Math.pow(l - 50, 2)) / Math.sqrt(20 + Math.pow(l - 50, 2));
-    const sc = 1 + 0.045 * cp;
-    const sh = 1 + 0.015 * cp * (1 - 0.17 * Math.cos(h1p - Math.PI/6) + 0.24 * Math.cos(2 * h1p) + 0.32 * Math.cos(3 * h1p + Math.PI/30) - 0.20 * Math.cos(4 * h1p - 21 * Math.PI/60));
-
-    const rt = -2 * Math.sqrt(Math.pow(cp, 7) / (Math.pow(cp, 7) + Math.pow(25, 7))) * Math.sin(60 * Math.exp(-Math.pow((h1p * 180/Math.PI - 275) / 25, 2)) * Math.PI/180);
-
-    return Math.sqrt(
-      Math.pow(deltaL / sl, 2) +
-      Math.pow(deltaC / sc, 2) +
-      Math.pow(dH / sh, 2) +
-      rt * (deltaC / sc) * (dH / sh)
-    );
-  };
-
-  // Calculate color importance score with improved weights
-  const getColorScore = (color: ColorScore): number => {
-    const { h, s, l } = color.hsl;
-    const population = Math.log(color.population + 1);
-    
-    // Saturation importance (0-100)
-    // Boost mid-range saturations (40-80%)
-    const saturationScore = s * (1 + Math.exp(-(Math.pow(s - 60, 2) / 800)));
-    
-    // Brightness importance (0-100)
-    // Prefer colors that aren't too dark or too light
-    const brightnessScore = 100 - Math.abs(l - 50);
-    
-    // Hue importance
-    // Slightly boost warm colors (reds, oranges, yellows)
-    const hueScore = (h >= 0 && h <= 60) ? 20 : 0;
-    
-    // Population importance (logarithmic scale)
-    const populationScore = population * 0.5;
-    
-    // Combine scores with weights
-    return (
-      saturationScore * 1.2 +
-      brightnessScore * 0.8 +
-      hueScore * 0.3 +
-      populationScore * 0.4
-    );
-  };
-
-  // Categorize color with improved thresholds
-  const categorizeColor = (hsl: HSL): ColorScore['category'] => {
-    const { s, l } = hsl;
-    
-    if (l >= 80) return 'light';
-    if (l <= 20) return 'dark';
-    if (s >= 60) return 'vibrant';
-    return 'muted';
-  };
-
-  // Simplify image into grid
-  const simplifyImage = useCallback((img: HTMLImageElement): HTMLCanvasElement => {
-    const canvas = canvasRef.current!;
-    const ctx = canvas.getContext('2d')!;
-    
-    canvas.width = img.width;
-    canvas.height = img.height;
-    ctx.drawImage(img, 0, 0);
-    
-    const cellWidth = Math.floor(canvas.width / gridSize);
-    const cellHeight = Math.floor(canvas.height / gridSize);
-    
-    for (let y = 0; y < canvas.height; y += cellHeight) {
-      for (let x = 0; x < canvas.width; x += cellWidth) {
-        const cellData = ctx.getImageData(x, y, cellWidth, cellHeight).data;
-        let r = 0, g = 0, b = 0, count = 0;
-        
-        for (let i = 0; i < cellData.length; i += 4) {
-          r += cellData[i];
-          g += cellData[i + 1];
-          b += cellData[i + 2];
-          count++;
-        }
-        
-        r = Math.floor(r / count);
-        g = Math.floor(g / count);
-        b = Math.floor(b / count);
-        
-        ctx.fillStyle = `rgb(${r},${g},${b})`;
-        ctx.fillRect(x, y, cellWidth, cellHeight);
-      }
-    }
-    
-    return canvas;
-  }, [gridSize]);
 
   // Extract colors using node-vibrant
   const extractColors = useCallback(async (imageUrl: string) => {
@@ -361,13 +135,6 @@ function App() {
     }
   }, [artworkUrl, extractColors]);
 
-  // Effect to re-extract colors when grid size changes
-  useEffect(() => {
-    if (artworkUrl) {
-      extractColors(artworkUrl);
-    }
-  }, [gridSize, artworkUrl, extractColors]);
-
   const fetchArtwork = async () => {
     if (!artworkId || isNaN(Number(artworkId)) || Number(artworkId) < 0 || Number(artworkId) > 999) {
       toast({
@@ -470,30 +237,6 @@ function App() {
                   >
                     View Artwork
                   </Button>
-
-                  {/* Grid Size Slider */}
-                  <Box mt={6}>
-                    <Text fontSize="sm" color="gray.600" mb={2}>
-                      Simplification Level
-                    </Text>
-                    <Slider
-                      min={5}
-                      max={50}
-                      step={5}
-                      value={gridSize}
-                      onChange={setGridSize}
-                      mb={2}
-                    >
-                      <SliderTrack>
-                        <SliderFilledTrack />
-                      </SliderTrack>
-                      <SliderThumb />
-                    </Slider>
-                    <Flex justify="space-between">
-                      <Text fontSize="xs" color="gray.500">More Simplified</Text>
-                      <Text fontSize="xs" color="gray.500">More Detailed</Text>
-                    </Flex>
-                  </Box>
 
                   {artworkId && (
                     <Text mt={4} fontSize="sm" color="gray.500" textAlign="center">
