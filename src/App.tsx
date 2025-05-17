@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Vibrant } from "node-vibrant/browser";
 import {
   ChakraProvider,
   Box,
@@ -251,208 +252,99 @@ function App() {
     return canvas;
   }, [gridSize]);
 
-  // Extract colors using custom algorithm
+  // Extract colors using node-vibrant
   const extractColors = useCallback(async (imageUrl: string) => {
     setLoading(true);
     try {
-      const img = document.createElement('img');
-      img.crossOrigin = 'Anonymous';
-      
+      console.log('Attempting to extract colors from:', imageUrl);
+
+      // First, get the background color from the image border
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
       await new Promise((resolve, reject) => {
         img.onload = resolve;
         img.onerror = reject;
         img.src = imageUrl;
       });
 
-      // Get background color from border pixels
-      const getBorderColors = (img: HTMLImageElement): RGB[] => {
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d')!;
-        canvas.width = img.width;
-        canvas.height = img.height;
-        ctx.drawImage(img, 0, 0);
-
-        const borderPixels: RGB[] = [];
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const data = imageData.data;
-
-        // Get pixels from all four borders
-        for (let x = 0; x < canvas.width; x++) {
-          // Top border
-          const topIdx = (x + 0 * canvas.width) * 4;
-          borderPixels.push({ r: data[topIdx], g: data[topIdx + 1], b: data[topIdx + 2] });
-          
-          // Bottom border
-          const bottomIdx = (x + (canvas.height - 1) * canvas.width) * 4;
-          borderPixels.push({ r: data[bottomIdx], g: data[bottomIdx + 1], b: data[bottomIdx + 2] });
-        }
-        
-        for (let y = 0; y < canvas.height; y++) {
-          // Left border
-          const leftIdx = (0 + y * canvas.width) * 4;
-          borderPixels.push({ r: data[leftIdx], g: data[leftIdx + 1], b: data[leftIdx + 2] });
-          
-          // Right border
-          const rightIdx = ((canvas.width - 1) + y * canvas.width) * 4;
-          borderPixels.push({ r: data[rightIdx], g: data[rightIdx + 1], b: data[rightIdx + 2] });
-        }
-
-        return borderPixels;
-      };
-
-      // Get the most common border color
-      const borderColors = getBorderColors(img);
-      const colorCounts = new Map<string, { rgb: RGB; count: number }>();
-      
-      borderColors.forEach(rgb => {
-        const key = `${rgb.r},${rgb.g},${rgb.b}`;
-        const existing = colorCounts.get(key);
-        if (existing) {
-          existing.count++;
-        } else {
-          colorCounts.set(key, { rgb, count: 1 });
-        }
-      });
-
-      let mostCommonBorderColor: RGB = { r: 255, g: 255, b: 255 };
-      let maxCount = 0;
-
-      colorCounts.forEach(({ rgb, count }) => {
-        if (count > maxCount) {
-          maxCount = count;
-          mostCommonBorderColor = rgb;
-        }
-      });
-
-      setBackgroundColor(rgbToHex(mostCommonBorderColor));
-
-      // Sample colors from the entire image
+      // Create canvas to sample border pixels
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d')!;
       canvas.width = img.width;
       canvas.height = img.height;
       ctx.drawImage(img, 0, 0);
 
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const data = imageData.data;
-      const colorMap = new Map<string, ColorScore>();
+      // Sample pixels from all four borders
+      const borderPixels: { r: number; g: number; b: number }[] = [];
+      
+      // Top and bottom borders
+      for (let x = 0; x < canvas.width; x++) {
+        const topData = ctx.getImageData(x, 0, 1, 1).data;
+        const bottomData = ctx.getImageData(x, canvas.height - 1, 1, 1).data;
+        borderPixels.push({ r: topData[0], g: topData[1], b: topData[2] });
+        borderPixels.push({ r: bottomData[0], g: bottomData[1], b: bottomData[2] });
+      }
+      
+      // Left and right borders
+      for (let y = 0; y < canvas.height; y++) {
+        const leftData = ctx.getImageData(0, y, 1, 1).data;
+        const rightData = ctx.getImageData(canvas.width - 1, y, 1, 1).data;
+        borderPixels.push({ r: leftData[0], g: leftData[1], b: leftData[2] });
+        borderPixels.push({ r: rightData[0], g: rightData[1], b: rightData[2] });
+      }
 
-      // Adaptive sampling based on image size
-      const samplingRate = Math.max(1, Math.floor(data.length / (4 * 10000))); // Sample up to 10000 pixels
-
-      // Sample colors with adaptive rate
-      for (let i = 0; i < data.length; i += 4 * samplingRate) {
-        const rgb: RGB = { r: data[i], g: data[i + 1], b: data[i + 2] };
-        const key = `${rgb.r},${rgb.g},${rgb.b}`;
-        
-        const existing = colorMap.get(key);
+      // Find the most common border color
+      const colorCounts = new Map<string, { color: string; count: number }>();
+      borderPixels.forEach(pixel => {
+        const colorKey = `rgb(${pixel.r},${pixel.g},${pixel.b})`;
+        const existing = colorCounts.get(colorKey);
         if (existing) {
-          existing.population++;
+          existing.count++;
         } else {
-          const hsl = rgbToHsl(rgb.r, rgb.g, rgb.b);
-          colorMap.set(key, {
-            rgb,
-            hex: rgbToHex(rgb),
-            hsl,
-            population: 1,
-            score: 0,
-            category: categorizeColor(hsl)
-          });
-        }
-      }
-
-      // Calculate scores and cluster similar colors
-      const clusters = new Map<string, ColorScore>();
-      const threshold = 15; // Reduced threshold for more precise clustering
-
-      // Sort colors by population before clustering
-      const sortedColors = Array.from(colorMap.values())
-        .sort((a, b) => b.population - a.population);
-
-      for (const color of sortedColors) {
-        // Find similar existing cluster
-        let foundCluster = false;
-        const existingClusters = Array.from(clusters.values());
-        
-        for (const cluster of existingClusters) {
-          if (getColorDistance(color.rgb, cluster.rgb) < threshold) {
-            cluster.population += color.population;
-            // Update cluster center to weighted average
-            const totalPop = cluster.population + color.population;
-            cluster.rgb = {
-              r: Math.round((cluster.rgb.r * cluster.population + color.rgb.r * color.population) / totalPop),
-              g: Math.round((cluster.rgb.g * cluster.population + color.rgb.g * color.population) / totalPop),
-              b: Math.round((cluster.rgb.b * cluster.population + color.rgb.b * color.population) / totalPop)
-            };
-            // Update cluster HSL and hex
-            cluster.hsl = rgbToHsl(cluster.rgb.r, cluster.rgb.g, cluster.rgb.b);
-            cluster.hex = rgbToHex(cluster.rgb);
-            cluster.category = categorizeColor(cluster.hsl);
-            foundCluster = true;
-            break;
-          }
-        }
-
-        // Create new cluster if no similar ones found
-        if (!foundCluster) {
-          clusters.set(color.hex, color);
-        }
-      }
-
-      // Calculate final scores
-      clusters.forEach(color => {
-        color.score = getColorScore(color);
-      });
-
-      // Filter out colors too similar to background
-      const backgroundThreshold = 20;
-      const filteredColors = Array.from(clusters.values())
-        .filter(color => getColorDistance(color.rgb, mostCommonBorderColor) > backgroundThreshold);
-
-      // Ensure color diversity by category
-      const categoryMinimums = {
-        vibrant: 2,
-        muted: 2,
-        light: 1,
-        dark: 1
-      };
-
-      const selectedColors: string[] = [];
-      const categories = Object.keys(categoryMinimums) as ColorScore['category'][];
-
-      // First, fulfill category minimums
-      categories.forEach(category => {
-        const colorsInCategory = filteredColors
-          .filter(c => c.category === category)
-          .sort((a, b) => b.score - a.score);
-        
-        const minimum = categoryMinimums[category];
-        for (let i = 0; i < minimum && i < colorsInCategory.length; i++) {
-          selectedColors.push(colorsInCategory[i].hex);
-          filteredColors.splice(filteredColors.indexOf(colorsInCategory[i]), 1);
+          colorCounts.set(colorKey, { color: colorKey, count: 1 });
         }
       });
 
-      // Then fill remaining slots with highest scoring colors
-      const remainingSlots = 8 - selectedColors.length;
-      if (remainingSlots > 0) {
-        const remainingColors = filteredColors
-          .sort((a, b) => b.score - a.score)
-          .slice(0, remainingSlots);
-        
-        selectedColors.push(...remainingColors.map(c => c.hex));
-      }
+      let mostCommonColor = '#FFFFFF';
+      let maxCount = 0;
+      colorCounts.forEach(({ color, count }) => {
+        if (count > maxCount) {
+          maxCount = count;
+          mostCommonColor = color;
+        }
+      });
 
-      setKeyColors(selectedColors);
+      console.log('Detected background color:', mostCommonColor);
+      setBackgroundColor(mostCommonColor);
 
-      // Create simplified version for display only
-      simplifyImage(img);
+      // Extract palette colors
+      const v = Vibrant.from(imageUrl);
+      const palette = await v.getPalette();
+      
+      console.log('Extracted palette:', palette);
+
+      // Organize colors by category (6 colors only)
+      const orderedColors = [
+        palette.Vibrant?.hex,
+        palette.DarkVibrant?.hex,
+        palette.LightVibrant?.hex,
+        palette.Muted?.hex,
+        palette.DarkMuted?.hex,
+        palette.LightMuted?.hex
+      ].filter(Boolean) as string[];
+
+      console.log('Ordered colors:', orderedColors);
+      setKeyColors(orderedColors);
 
     } catch (error) {
-      console.error('Error extracting colors:', error);
+      console.error('Detailed error extracting colors:', error);
+      if (error instanceof Error) {
+        console.error('Error message:', error.message);
+        console.error('Error stack:', error.stack);
+      }
       toast({
         title: 'Error',
-        description: 'Failed to extract colors from the artwork',
+        description: `Failed to extract colors: ${error instanceof Error ? error.message : 'Unknown error'}`,
         status: 'error',
         duration: 3000,
         isClosable: true,
@@ -460,7 +352,7 @@ function App() {
     } finally {
       setLoading(false);
     }
-  }, [simplifyImage, toast, rgbToHex]);
+  }, [toast]);
 
   // Effect to extract colors when artwork URL changes
   useEffect(() => {
@@ -476,7 +368,7 @@ function App() {
     }
   }, [gridSize, artworkUrl, extractColors]);
 
-  const fetchArtwork = () => {
+  const fetchArtwork = async () => {
     if (!artworkId || isNaN(Number(artworkId)) || Number(artworkId) < 0 || Number(artworkId) > 999) {
       toast({
         title: 'Invalid artwork ID',
@@ -488,15 +380,42 @@ function App() {
       return;
     }
 
-    // Format the token ID with leading zeros
-    const formattedTokenId = artworkId.toString().padStart(3, '0');
-    console.log('Formatted token ID:', formattedTokenId);
-    
-    // Use the Art Blocks token endpoint
-    const imageUrl = `https://media.artblocks.io/163000${formattedTokenId}.png`;
-    console.log('Image URL:', imageUrl);
-    setArtworkUrl(imageUrl);
+    try {
+      const formattedTokenId = artworkId.toString().padStart(3, '0');
+      const imageUrl = `https://media.artblocks.io/163000${formattedTokenId}.png`;
+      
+      // Preload the image
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+        img.src = imageUrl;
+      });
+
+      console.log('Image loaded successfully:', imageUrl);
+      setArtworkUrl(imageUrl);
+    } catch (error) {
+      console.error('Error loading image:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to load the artwork image. Please try again.',
+        status: 'error',
+        duration: 3000,
+        isClosable: true,
+      });
+    }
   };
+
+  // Update the color swatches display to show labels
+  const colorCategories = [
+    'Vibrant',
+    'Dark Vibrant',
+    'Light Vibrant',
+    'Muted',
+    'Dark Muted',
+    'Light Muted'
+  ];
 
   return (
     <ChakraProvider>
@@ -538,7 +457,10 @@ function App() {
                     mb={4}
                   />
                   <Button
-                    onClick={fetchArtwork}
+                    onClick={() => {
+                      setLoading(true);
+                      fetchArtwork().finally(() => setLoading(false));
+                    }}
                     size="lg"
                     colorScheme="blue"
                     w="100%"
@@ -593,46 +515,111 @@ function App() {
                   border="1px"
                   borderColor="gray.100"
                 >
-                  <Box p={6}>
-                    {/* Images Grid */}
-                    <Grid templateColumns="repeat(2, 1fr)" gap={6}>
-                      {/* Original Image */}
-                      <Box>
+                  <Grid templateColumns={{ base: "1fr", lg: "3fr 1fr" }} gap={6} p={6}>
+                    {/* Original Image */}
+                    <Box>
+                      <ChakraImage
+                        src={artworkUrl}
+                        alt={`Meridian Artwork #${artworkId}`}
+                        w="100%"
+                        h="auto"
+                        objectFit="contain"
+                        borderRadius="md"
+                        crossOrigin="anonymous"
+                      />
+                    </Box>
+
+                    {/* Color Swatches */}
+                    <Box>
+                      {/* Background Color */}
+                      <Box mb={4}>
                         <Text fontSize="sm" color="gray.600" mb={2}>
-                          Original
+                          Background Color
                         </Text>
-                        <ChakraImage
-                          src={artworkUrl}
-                          alt={`Meridian Artwork #${artworkId}`}
+                        <Box
                           w="100%"
-                          h="auto"
-                          objectFit="contain"
-                          borderRadius="md"
-                          crossOrigin="anonymous"
-                        />
-                      </Box>
-                      
-                      {/* Simplified Image */}
-                      <Box>
-                        <Text fontSize="sm" color="gray.600" mb={2}>
-                          Simplified
-                        </Text>
-                        <Box borderRadius="md" overflow="hidden">
-                          <canvas
-                            ref={canvasRef}
-                            style={{
-                              width: '100%',
-                              height: 'auto',
-                              display: 'block'
-                            }}
+                          paddingBottom="20%"
+                          position="relative"
+                          mb={2}
+                        >
+                          <Box
+                            position="absolute"
+                            top={0}
+                            left={0}
+                            right={0}
+                            bottom={0}
+                            borderRadius="md"
+                            bg={backgroundColor}
+                            boxShadow="md"
+                            border="1px solid"
+                            borderColor="gray.200"
                           />
                         </Box>
+                        <Text
+                          fontSize="xs"
+                          color="gray.600"
+                          fontFamily="mono"
+                          textAlign="center"
+                        >
+                          {backgroundColor.toUpperCase()}
+                        </Text>
                       </Box>
-                    </Grid>
-                  </Box>
+
+                      <Divider my={6} />
+
+                      {/* Key Colors */}
+                      <Box>
+                        <Text fontSize="sm" color="gray.600" mb={2}>
+                          Key Colors
+                        </Text>
+                        <Grid templateColumns="repeat(2, 1fr)" gap={4}>
+                          {keyColors.map((color, index) => (
+                            <Box key={index}>
+                              <Box
+                                w="100%"
+                                paddingBottom="100%"
+                                position="relative"
+                                mb={2}
+                              >
+                                <Box
+                                  position="absolute"
+                                  top={0}
+                                  left={0}
+                                  right={0}
+                                  bottom={0}
+                                  borderRadius="md"
+                                  bg={color}
+                                  boxShadow="md"
+                                  border="1px solid"
+                                  borderColor="gray.200"
+                                />
+                              </Box>
+                              <Text
+                                fontSize="xs"
+                                color="gray.600"
+                                fontFamily="mono"
+                                textAlign="center"
+                                mb={1}
+                              >
+                                {colorCategories[index]}
+                              </Text>
+                              <Text
+                                fontSize="xs"
+                                color="gray.600"
+                                fontFamily="mono"
+                                textAlign="center"
+                              >
+                                {color.toUpperCase()}
+                              </Text>
+                            </Box>
+                          ))}
+                        </Grid>
+                      </Box>
+                    </Box>
+                  </Grid>
 
                   <Box borderTop="1px" borderColor="gray.100" p={6}>
-                    <Flex justify="space-between" align="center" mb={6}>
+                    <Flex justify="space-between" align="center">
                       <Link
                         href={`https://www.artblocks.io/token/0xa7d8d9ef8d8ce8992df33d8b8cf4aebabd5bd270/163000${artworkId.padStart(3, '0')}`}
                         target="_blank"
@@ -642,90 +629,7 @@ function App() {
                       >
                         View on Art Blocks →
                       </Link>
-                      <Text color="gray.500" fontSize="sm">
-                        Color Palette
-                      </Text>
                     </Flex>
-
-                    {/* Background Color */}
-                    <Box mb={4}>
-                      <Text fontSize="sm" color="gray.600" mb={2}>
-                        Background Color
-                      </Text>
-                      <Grid templateColumns="repeat(1, 1fr)" gap={4}>
-                        <Box>
-                          <Box
-                            w="100%"
-                            paddingBottom="20%"
-                            position="relative"
-                            mb={2}
-                          >
-                            <Box
-                              position="absolute"
-                              top={0}
-                              left={0}
-                              right={0}
-                              bottom={0}
-                              borderRadius="md"
-                              bg={backgroundColor}
-                              boxShadow="md"
-                              border="1px solid"
-                              borderColor="gray.200"
-                            />
-                          </Box>
-                          <Text
-                            fontSize="xs"
-                            color="gray.600"
-                            fontFamily="mono"
-                            textAlign="center"
-                          >
-                            {backgroundColor.toUpperCase()}
-                          </Text>
-                        </Box>
-                      </Grid>
-                    </Box>
-
-                    <Divider my={6} />
-
-                    {/* Key Colors */}
-                    <Box>
-                      <Text fontSize="sm" color="gray.600" mb={2}>
-                        Key Colors
-                      </Text>
-                      <Grid templateColumns="repeat(8, 1fr)" gap={4}>
-                        {keyColors.map((color, index) => (
-                          <Box key={index}>
-                            <Box
-                              w="100%"
-                              paddingBottom="100%"
-                              position="relative"
-                              mb={2}
-                            >
-                              <Box
-                                position="absolute"
-                                top={0}
-                                left={0}
-                                right={0}
-                                bottom={0}
-                                borderRadius="md"
-                                bg={color}
-                                boxShadow="md"
-                                border="1px solid"
-                                borderColor="gray.200"
-                              />
-                            </Box>
-                            <Text
-                              fontSize="xs"
-                              color="gray.600"
-                              fontFamily="mono"
-                              textAlign="center"
-                            >
-                              {color.toUpperCase()}
-                            </Text>
-                          </Box>
-                        ))}
-                      </Grid>
-                    </Box>
                   </Box>
                 </Box>
               ) : (
