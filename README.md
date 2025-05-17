@@ -1,46 +1,30 @@
 # Meridian Art Viewer
 
-A React-based web application for viewing Meridian artworks from the Art Blocks platform. This viewer allows users to explore Meridian artworks by entering token IDs between 0 and 999, with advanced color analysis features.
-
-🌐 **[View Live Demo](https://pixelsushirobot.github.io/Meridian-Art-Viewer)**
+A React-based viewer for Art Blocks' Meridian collection that analyzes and visualizes the color composition of each artwork.
 
 ## Features
 
-- View Meridian artworks by entering token IDs (0-999)
-- Direct links to Art Blocks platform for each artwork
-- Responsive design using Chakra UI
-- Real-time artwork loading and display
-- Advanced color analysis:
-  - Accurate background color detection from artwork borders
-  - 8 distinct key colors extracted from the artwork
-  - Smart color difference calculation to ensure unique colors
-  - Optional white color detection
-- Image Simplification:
-  - Side-by-side view of original and simplified artwork
-  - Adjustable grid-based simplification
-  - Real-time color palette updates based on simplification level
-  - Customizable grid size (5-50 cells)
+- View any Meridian artwork by ID (0-999)
+- Automatic color palette extraction using node-vibrant
+- Smart background color detection
+- Color visualization with proportional representation
+- Vertical position-based color ordering
+- Interactive color swatches with hover effects
+- Percentage breakdown of color usage
 
-## Technologies Used
+## Technical Details
 
-- React
-- TypeScript
-- Chakra UI
-- Color Thief (for color extraction)
-- Create React App
+- Built with React and TypeScript
+- Uses Chakra UI for styling
+- Implements node-vibrant for color extraction
+- Canvas-based image analysis for accurate color detection
+- Optimized for frequent pixel reading operations
 
 ## Getting Started
 
-### Prerequisites
-
-- Node.js (v14 or higher)
-- npm (v6 or higher)
-
-### Installation
-
 1. Clone the repository:
 ```bash
-git clone https://github.com/PixelSushiRobot/Meridian-Art-Viewer.git
+git clone https://github.com/yourusername/Meridian-Art-Viewer.git
 cd Meridian-Art-Viewer
 ```
 
@@ -58,29 +42,30 @@ npm start
 
 ## Usage
 
-1. Enter a token ID between 0 and 999 in the input field
-2. Click "View Artwork" to load the corresponding Meridian artwork
-3. Use the simplification slider to adjust the grid size:
-   - Move left for more simplified view
-   - Move right for more detailed view
-4. Observe the color analysis:
-   - Background color (detected from artwork borders)
-   - 8 key colors extracted from the simplified artwork
-5. Click "View on Art Blocks" to see the artwork on the official Art Blocks platform
+1. Enter a Meridian artwork ID (0-999) in the input field
+2. Click "View Artwork" or press Enter
+3. The artwork will be displayed along with:
+   - Original artwork image
+   - Background color detection
+   - Color visualization
+   - Color swatches with percentages
 
-## Color Analysis Details
+## Color Analysis Features
 
-The application performs sophisticated color analysis:
-- Background color is detected by analyzing the artwork's border pixels
-- Key colors are extracted from the simplified version of the artwork
-- Color difference calculations ensure distinct and representative colors
-- White is only included when it's a significant part of the artwork
-- The palette updates in real-time as you adjust the simplification level
+- Background color detection using corner sampling
+- Vertical position tracking for each color
+- Minimum 10% height for better visibility
+- Equal padding on all sides
+- Smart color filtering to remove similar colors
+- Black and white detection for monochrome elements
 
-## Contributing
+## Dependencies
 
-Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
+- React
+- Chakra UI
+- node-vibrant
+- TypeScript
 
 ## License
 
-[MIT](https://choosealicense.com/licenses/mit/)
+MIT License - See LICENSE file for details
