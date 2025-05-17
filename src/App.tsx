@@ -22,6 +22,7 @@ function App() {
   const [artworkUrl, setArtworkUrl] = useState('');
   const [backgroundColor, setBackgroundColor] = useState('#FFFFFF');
   const [keyColors, setKeyColors] = useState<string[]>([]);
+  const [colorPercentages, setColorPercentages] = useState<Map<string, number>>(new Map());
   const [loading, setLoading] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const toast = useToast();
@@ -106,13 +107,16 @@ function App() {
       whiteAnalysisCanvas.height = whiteAnalysisImg.height;
       whiteAnalysisCtx.drawImage(whiteAnalysisImg, 0, 0);
 
-      // Sample pixels to find white and black areas
+      // Sample pixels to find color percentages
       const imageData = whiteAnalysisCtx.getImageData(0, 0, whiteAnalysisCanvas.width, whiteAnalysisCanvas.height).data;
       let whitePixelCount = 0;
       let blackPixelCount = 0;
       let totalPixels = 0;
-      const whiteThreshold = 240; // Slightly lower threshold for white
-      const blackThreshold = 30; // Threshold for black
+      const whiteThreshold = 240;
+      const blackThreshold = 30;
+      
+      // Create a map to store color counts
+      const pixelCounts = new Map<string, number>();
       
       for (let i = 0; i < imageData.length; i += 4) {
         const r = imageData[i];
@@ -120,21 +124,30 @@ function App() {
         const b = imageData[i + 2];
         const brightness = (r + g + b) / 3;
         
+        // Count black and white pixels
         if (brightness >= whiteThreshold) {
           whitePixelCount++;
         } else if (brightness <= blackThreshold) {
           blackPixelCount++;
         }
+
+        // Count all colors (simplified to nearest 5 to group similar colors)
+        const simplifiedR = Math.round(r / 5) * 5;
+        const simplifiedG = Math.round(g / 5) * 5;
+        const simplifiedB = Math.round(b / 5) * 5;
+        const colorKey = `#${simplifiedR.toString(16).padStart(2, '0')}${simplifiedG.toString(16).padStart(2, '0')}${simplifiedB.toString(16).padStart(2, '0')}`;
+        pixelCounts.set(colorKey, (pixelCounts.get(colorKey) || 0) + 1);
+        
         totalPixels++;
       }
 
-      // Calculate white and black color percentages
+      // Calculate percentages
       const whitePercentage = (whitePixelCount / totalPixels) * 100;
       const blackPercentage = (blackPixelCount / totalPixels) * 100;
       
       // For black and white images, lower the threshold for considering a color significant
       const isMonochromatic = (whitePercentage + blackPercentage) > 90;
-      const significantThreshold = isMonochromatic ? 3 : 5; // Lower threshold for B&W images
+      const significantThreshold = isMonochromatic ? 3 : 5;
 
       // Get the vibrant palette
       const v = Vibrant.from(imageUrl)
@@ -144,7 +157,42 @@ function App() {
 
       const palette = await v.getPalette();
       
-      // Organize colors by category with priority for Meridian's style
+      // Calculate percentage for each palette color
+      const getColorPercentage = (hexColor: string): number => {
+        const rgb = hexColor.match(/\w\w/g)?.map((x: string) => parseInt(x, 16)) || [];
+        if (rgb.length !== 3) return 0;
+
+        // Look for similar colors within our simplified color map
+        let totalCount = 0;
+        const [r, g, b] = rgb;
+        const tolerance = 25;
+
+        pixelCounts.forEach((count, key) => {
+          const keyRgb = key.match(/\w\w/g)?.map((x: string) => parseInt(x, 16)) || [];
+          if (keyRgb.length === 3) {
+            const [kr, kg, kb] = keyRgb;
+            if (
+              Math.abs(kr - r) <= tolerance &&
+              Math.abs(kg - g) <= tolerance &&
+              Math.abs(kb - b) <= tolerance
+            ) {
+              totalCount += count;
+            }
+          }
+        });
+
+        return (totalCount / totalPixels) * 100;
+      };
+
+      // Build the final color array including black and white when significant
+      const colorData: Array<{ hex: string; percentage: number }> = [];
+      
+      // Add black if significant
+      if (blackPercentage >= significantThreshold) {
+        colorData.push({ hex: '#000000', percentage: blackPercentage });
+      }
+      
+      // Add standard colors with their percentages
       const standardColors = [
         palette.Vibrant?.hex,
         palette.DarkVibrant?.hex,
@@ -161,57 +209,42 @@ function App() {
         const [r, g, b] = rgb;
         const brightness = (r + g + b) / 3;
         
-        // Skip colors that are too close to pure black or white
         if (brightness >= whiteThreshold || brightness <= blackThreshold) {
           return false;
         }
 
-        // For B&W images, be more lenient with color acceptance
         if (isMonochromatic) {
           return true;
         }
 
-        // Standard color filtering for color images
         const max = Math.max(r, g, b);
         const min = Math.min(r, g, b);
         const chroma = max - min;
         return chroma > 5 && brightness >= 20 && brightness < whiteThreshold;
       });
 
-      // Build the final color array including black and white when significant
-      const finalColors: string[] = [];
-      
-      // Add black if significant and actually present
-      if (blackPercentage >= significantThreshold) {
-        // Only add pure black or very close to black
-        const pureBlack = '#000000';
-        finalColors.push(pureBlack);
-      }
-      
-      // Add standard colors, ensuring no browns or dark colors are labeled as black
-      finalColors.push(...standardColors.filter(color => {
-        const rgb = color.match(/\w\w/g)?.map((x: string) => parseInt(x, 16)) || [];
-        if (rgb.length !== 3) return false;
-
-        const [r, g, b] = rgb;
-        const brightness = (r + g + b) / 3;
-        
-        // Ensure we don't include colors that are too close to black
-        // This prevents dark browns and other dark colors from being filtered
-        return brightness > blackThreshold;
-      }));
+      // Add standard colors with their percentages
+      standardColors.forEach(color => {
+        const percentage = getColorPercentage(color);
+        if (percentage >= 1) {
+          colorData.push({ hex: color, percentage });
+        }
+      });
       
       // Add white if significant
       if (whitePercentage >= significantThreshold) {
-        const pureWhite = '#FFFFFF';
-        finalColors.push(pureWhite);
+        colorData.push({ hex: '#FFFFFF', percentage: whitePercentage });
       }
 
-      console.log('Color percentages:', { white: whitePercentage, black: blackPercentage });
-      console.log('Is monochromatic:', isMonochromatic);
-      console.log('Final colors:', finalColors);
-      setKeyColors(finalColors);
+      // Sort colors by percentage (descending)
+      colorData.sort((a, b) => b.percentage - a.percentage);
 
+      // Update state
+      const percentageMap = new Map(colorData.map(({ hex, percentage }) => [hex, percentage]));
+      setColorPercentages(percentageMap);
+      setKeyColors(colorData.map(c => c.hex));
+
+      console.log('Color data:', colorData);
     } catch (error) {
       console.error('Detailed error extracting colors:', error);
       if (error instanceof Error) {
@@ -466,8 +499,16 @@ function App() {
                                 color="gray.600"
                                 fontFamily="mono"
                                 textAlign="center"
+                                mb={1}
                               >
                                 {color.toUpperCase()}
+                              </Text>
+                              <Text
+                                fontSize="xs"
+                                color="gray.500"
+                                textAlign="center"
+                              >
+                                {Math.round(colorPercentages.get(color) || 0)}%
                               </Text>
                             </Box>
                           ))}
