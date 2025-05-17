@@ -20,7 +20,33 @@ import {
   SliderThumb,
   SliderMark,
 } from '@chakra-ui/react';
-import ColorThief from 'colorthief';
+
+interface RGB {
+  r: number;
+  g: number;
+  b: number;
+}
+
+interface HSL {
+  h: number;
+  s: number;
+  l: number;
+}
+
+interface Lab {
+  l: number;
+  a: number;
+  b: number;
+}
+
+interface ColorScore {
+  rgb: RGB;
+  hex: string;
+  hsl: HSL;
+  population: number;
+  score: number;
+  category: 'vibrant' | 'muted' | 'light' | 'dark';
+}
 
 function App() {
   const [artworkId, setArtworkId] = useState('');
@@ -28,37 +54,181 @@ function App() {
   const [backgroundColor, setBackgroundColor] = useState('#FFFFFF');
   const [keyColors, setKeyColors] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
-  const [gridSize, setGridSize] = useState(20); // Default grid size (higher = more detailed)
+  const [gridSize, setGridSize] = useState(20);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const toast = useToast();
 
-  // Convert RGB array to HEX
-  const rgbToHex = useCallback((r: number, g: number, b: number): string => {
+  // Convert RGB to HSL
+  const rgbToHsl = (r: number, g: number, b: number): HSL => {
+    r /= 255;
+    g /= 255;
+    b /= 255;
+
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    let h = 0;
+    let s = 0;
+    const l = (max + min) / 2;
+
+    if (max !== min) {
+      const d = max - min;
+      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+      
+      switch (max) {
+        case r:
+          h = (g - b) / d + (g < b ? 6 : 0);
+          break;
+        case g:
+          h = (b - r) / d + 2;
+          break;
+        case b:
+          h = (r - g) / d + 4;
+          break;
+      }
+      
+      h /= 6;
+    }
+
+    return { h: h * 360, s: s * 100, l: l * 100 };
+  };
+
+  // Convert RGB to HEX
+  const rgbToHex = useCallback(({ r, g, b }: RGB): string => {
     return '#' + [r, g, b].map(x => {
       const hex = x.toString(16);
       return hex.length === 1 ? '0' + hex : hex;
     }).join('');
   }, []);
 
+  // Convert RGB to LAB color space
+  const rgbToLab = (rgb: RGB): Lab => {
+    // Convert RGB to XYZ
+    let r = rgb.r / 255;
+    let g = rgb.g / 255;
+    let b = rgb.b / 255;
+
+    r = r > 0.04045 ? Math.pow((r + 0.055) / 1.055, 2.4) : r / 12.92;
+    g = g > 0.04045 ? Math.pow((g + 0.055) / 1.055, 2.4) : g / 12.92;
+    b = b > 0.04045 ? Math.pow((b + 0.055) / 1.055, 2.4) : b / 12.92;
+
+    const x = (r * 0.4124 + g * 0.3576 + b * 0.1805) * 100;
+    const y = (r * 0.2126 + g * 0.7152 + b * 0.0722) * 100;
+    const z = (r * 0.0193 + g * 0.1192 + b * 0.9505) * 100;
+
+    // Convert XYZ to Lab
+    const xn = 95.047;
+    const yn = 100.0;
+    const zn = 108.883;
+
+    const xyz = [x / xn, y / yn, z / zn];
+    for (let i = 0; i < 3; i++) {
+      xyz[i] = xyz[i] > 0.008856 
+        ? Math.pow(xyz[i], 1/3) 
+        : (7.787 * xyz[i]) + 16/116;
+    }
+
+    return {
+      l: (116 * xyz[1]) - 16,
+      a: 500 * (xyz[0] - xyz[1]),
+      b: 200 * (xyz[1] - xyz[2])
+    };
+  };
+
+  // Calculate CIEDE2000 color difference
+  const getColorDistance = (color1: RGB, color2: RGB): number => {
+    const lab1 = rgbToLab(color1);
+    const lab2 = rgbToLab(color2);
+
+    const deltaL = lab2.l - lab1.l;
+    const l = (lab1.l + lab2.l) / 2;
+    const c1 = Math.sqrt(lab1.a * lab1.a + lab1.b * lab1.b);
+    const c2 = Math.sqrt(lab2.a * lab2.a + lab2.b * lab2.b);
+    const c = (c1 + c2) / 2;
+
+    const a1p = lab1.a + (lab1.a / 2) * (1 - Math.sqrt(Math.pow(c, 7) / (Math.pow(c, 7) + Math.pow(25, 7))));
+    const a2p = lab2.a + (lab2.a / 2) * (1 - Math.sqrt(Math.pow(c, 7) / (Math.pow(c, 7) + Math.pow(25, 7))));
+
+    const c1p = Math.sqrt(a1p * a1p + lab1.b * lab1.b);
+    const c2p = Math.sqrt(a2p * a2p + lab2.b * lab2.b);
+    const cp = (c1p + c2p) / 2;
+
+    const deltaC = c2p - c1p;
+    const h1p = Math.atan2(lab1.b, a1p);
+    const h2p = Math.atan2(lab2.b, a2p);
+    let dhp = h2p - h1p;
+
+    if (dhp > Math.PI) dhp -= 2 * Math.PI;
+    if (dhp < -Math.PI) dhp += 2 * Math.PI;
+
+    const dH = 2 * Math.sqrt(c1p * c2p) * Math.sin(dhp / 2);
+
+    const sl = 1 + (0.015 * Math.pow(l - 50, 2)) / Math.sqrt(20 + Math.pow(l - 50, 2));
+    const sc = 1 + 0.045 * cp;
+    const sh = 1 + 0.015 * cp * (1 - 0.17 * Math.cos(h1p - Math.PI/6) + 0.24 * Math.cos(2 * h1p) + 0.32 * Math.cos(3 * h1p + Math.PI/30) - 0.20 * Math.cos(4 * h1p - 21 * Math.PI/60));
+
+    const rt = -2 * Math.sqrt(Math.pow(cp, 7) / (Math.pow(cp, 7) + Math.pow(25, 7))) * Math.sin(60 * Math.exp(-Math.pow((h1p * 180/Math.PI - 275) / 25, 2)) * Math.PI/180);
+
+    return Math.sqrt(
+      Math.pow(deltaL / sl, 2) +
+      Math.pow(deltaC / sc, 2) +
+      Math.pow(dH / sh, 2) +
+      rt * (deltaC / sc) * (dH / sh)
+    );
+  };
+
+  // Calculate color importance score with improved weights
+  const getColorScore = (color: ColorScore): number => {
+    const { h, s, l } = color.hsl;
+    const population = Math.log(color.population + 1);
+    
+    // Saturation importance (0-100)
+    // Boost mid-range saturations (40-80%)
+    const saturationScore = s * (1 + Math.exp(-(Math.pow(s - 60, 2) / 800)));
+    
+    // Brightness importance (0-100)
+    // Prefer colors that aren't too dark or too light
+    const brightnessScore = 100 - Math.abs(l - 50);
+    
+    // Hue importance
+    // Slightly boost warm colors (reds, oranges, yellows)
+    const hueScore = (h >= 0 && h <= 60) ? 20 : 0;
+    
+    // Population importance (logarithmic scale)
+    const populationScore = population * 0.5;
+    
+    // Combine scores with weights
+    return (
+      saturationScore * 1.2 +
+      brightnessScore * 0.8 +
+      hueScore * 0.3 +
+      populationScore * 0.4
+    );
+  };
+
+  // Categorize color with improved thresholds
+  const categorizeColor = (hsl: HSL): ColorScore['category'] => {
+    const { s, l } = hsl;
+    
+    if (l >= 80) return 'light';
+    if (l <= 20) return 'dark';
+    if (s >= 60) return 'vibrant';
+    return 'muted';
+  };
+
   // Simplify image into grid
   const simplifyImage = useCallback((img: HTMLImageElement): HTMLCanvasElement => {
     const canvas = canvasRef.current!;
     const ctx = canvas.getContext('2d')!;
     
-    // Set canvas size to match image
     canvas.width = img.width;
     canvas.height = img.height;
-    
-    // Draw original image
     ctx.drawImage(img, 0, 0);
     
     const cellWidth = Math.floor(canvas.width / gridSize);
     const cellHeight = Math.floor(canvas.height / gridSize);
     
-    // For each grid cell
     for (let y = 0; y < canvas.height; y += cellHeight) {
       for (let x = 0; x < canvas.width; x += cellWidth) {
-        // Get the average color of the cell
         const cellData = ctx.getImageData(x, y, cellWidth, cellHeight).data;
         let r = 0, g = 0, b = 0, count = 0;
         
@@ -69,12 +239,10 @@ function App() {
           count++;
         }
         
-        // Calculate average color
         r = Math.floor(r / count);
         g = Math.floor(g / count);
         b = Math.floor(b / count);
         
-        // Fill the cell with the average color
         ctx.fillStyle = `rgb(${r},${g},${b})`;
         ctx.fillRect(x, y, cellWidth, cellHeight);
       }
@@ -83,11 +251,10 @@ function App() {
     return canvas;
   }, [gridSize]);
 
-  // Extract colors using ColorThief
+  // Extract colors using custom algorithm
   const extractColors = useCallback(async (imageUrl: string) => {
     setLoading(true);
     try {
-      const colorThief = new ColorThief();
       const img = document.createElement('img');
       img.crossOrigin = 'Anonymous';
       
@@ -97,18 +264,15 @@ function App() {
         img.src = imageUrl;
       });
 
-      // Simplify the image first
-      const simplifiedCanvas = simplifyImage(img);
-      
-      // Get the dominant color for background from original image borders
-      const getBorderColors = (img: HTMLImageElement): [number, number, number][] => {
+      // Get background color from border pixels
+      const getBorderColors = (img: HTMLImageElement): RGB[] => {
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d')!;
         canvas.width = img.width;
         canvas.height = img.height;
         ctx.drawImage(img, 0, 0);
 
-        const borderPixels: [number, number, number][] = [];
+        const borderPixels: RGB[] = [];
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const data = imageData.data;
 
@@ -116,99 +280,174 @@ function App() {
         for (let x = 0; x < canvas.width; x++) {
           // Top border
           const topIdx = (x + 0 * canvas.width) * 4;
-          borderPixels.push([data[topIdx], data[topIdx + 1], data[topIdx + 2]]);
+          borderPixels.push({ r: data[topIdx], g: data[topIdx + 1], b: data[topIdx + 2] });
           
           // Bottom border
           const bottomIdx = (x + (canvas.height - 1) * canvas.width) * 4;
-          borderPixels.push([data[bottomIdx], data[bottomIdx + 1], data[bottomIdx + 2]]);
+          borderPixels.push({ r: data[bottomIdx], g: data[bottomIdx + 1], b: data[bottomIdx + 2] });
         }
         
         for (let y = 0; y < canvas.height; y++) {
           // Left border
           const leftIdx = (0 + y * canvas.width) * 4;
-          borderPixels.push([data[leftIdx], data[leftIdx + 1], data[leftIdx + 2]]);
+          borderPixels.push({ r: data[leftIdx], g: data[leftIdx + 1], b: data[leftIdx + 2] });
           
           // Right border
           const rightIdx = ((canvas.width - 1) + y * canvas.width) * 4;
-          borderPixels.push([data[rightIdx], data[rightIdx + 1], data[rightIdx + 2]]);
+          borderPixels.push({ r: data[rightIdx], g: data[rightIdx + 1], b: data[rightIdx + 2] });
         }
 
         return borderPixels;
       };
 
-      // Helper function to calculate color difference
-      const getColorDifference = (color1: [number, number, number], color2: [number, number, number]): number => {
-        return Math.sqrt(
-          Math.pow(color1[0] - color2[0], 2) +
-          Math.pow(color1[1] - color2[1], 2) +
-          Math.pow(color1[2] - color2[2], 2)
-        );
-      };
-
       // Get the most common border color
       const borderColors = getBorderColors(img);
-      const colorCounts = new Map<string, number>();
+      const colorCounts = new Map<string, { rgb: RGB; count: number }>();
       
-      borderColors.forEach(color => {
-        const key = color.join(',');
-        colorCounts.set(key, (colorCounts.get(key) || 0) + 1);
+      borderColors.forEach(rgb => {
+        const key = `${rgb.r},${rgb.g},${rgb.b}`;
+        const existing = colorCounts.get(key);
+        if (existing) {
+          existing.count++;
+        } else {
+          colorCounts.set(key, { rgb, count: 1 });
+        }
       });
 
-      let mostCommonBorderColor: [number, number, number] = [255, 255, 255];
+      let mostCommonBorderColor: RGB = { r: 255, g: 255, b: 255 };
       let maxCount = 0;
 
-      colorCounts.forEach((count, colorKey) => {
+      colorCounts.forEach(({ rgb, count }) => {
         if (count > maxCount) {
           maxCount = count;
-          mostCommonBorderColor = colorKey.split(',').map(Number) as [number, number, number];
+          mostCommonBorderColor = rgb;
         }
       });
 
-      const bgColor = rgbToHex(...mostCommonBorderColor);
-      setBackgroundColor(bgColor);
+      setBackgroundColor(rgbToHex(mostCommonBorderColor));
 
-      // Convert canvas to image for ColorThief
-      const simplifiedImg = document.createElement('img');
-      simplifiedImg.crossOrigin = 'Anonymous';
-      await new Promise((resolve, reject) => {
-        simplifiedImg.onload = resolve;
-        simplifiedImg.onerror = reject;
-        simplifiedImg.src = simplifiedCanvas.toDataURL();
-      });
+      // Sample colors from the entire image
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d')!;
+      canvas.width = img.width;
+      canvas.height = img.height;
+      ctx.drawImage(img, 0, 0);
 
-      // Get palette for key colors from simplified image
-      const palette = colorThief.getPalette(simplifiedImg, 16); // Get more colors to filter
-      const keyColorSet = new Set<string>();
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = imageData.data;
+      const colorMap = new Map<string, ColorScore>();
 
-      // Check if white exists in the simplified image
-      const white: [number, number, number] = [255, 255, 255];
-      const hasWhite = palette.some(color => getColorDifference(color, white) < 30);
-      
-      if (hasWhite) {
-        keyColorSet.add('#FFFFFF');
+      // Adaptive sampling based on image size
+      const samplingRate = Math.max(1, Math.floor(data.length / (4 * 10000))); // Sample up to 10000 pixels
+
+      // Sample colors with adaptive rate
+      for (let i = 0; i < data.length; i += 4 * samplingRate) {
+        const rgb: RGB = { r: data[i], g: data[i + 1], b: data[i + 2] };
+        const key = `${rgb.r},${rgb.g},${rgb.b}`;
+        
+        const existing = colorMap.get(key);
+        if (existing) {
+          existing.population++;
+        } else {
+          const hsl = rgbToHsl(rgb.r, rgb.g, rgb.b);
+          colorMap.set(key, {
+            rgb,
+            hex: rgbToHex(rgb),
+            hsl,
+            population: 1,
+            score: 0,
+            category: categorizeColor(hsl)
+          });
+        }
       }
 
-      // Filter colors that are too similar to background or each other
-      palette.forEach(color => {
-        const hexColor = rgbToHex(...color);
-        const diffFromBg = getColorDifference(color, mostCommonBorderColor);
-        
-        // Only add colors that are different enough from background
-        if (diffFromBg > 50) {
-          // Check if color is different enough from already selected colors
-          const isDifferentEnough = Array.from(keyColorSet).every(existingHex => {
-            const existing = existingHex.match(/\w\w/g)?.map(h => parseInt(h, 16)) || [];
-            return getColorDifference(color, existing as [number, number, number]) > 50;
-          });
+      // Calculate scores and cluster similar colors
+      const clusters = new Map<string, ColorScore>();
+      const threshold = 15; // Reduced threshold for more precise clustering
 
-          if (isDifferentEnough) {
-            keyColorSet.add(hexColor);
+      // Sort colors by population before clustering
+      const sortedColors = Array.from(colorMap.values())
+        .sort((a, b) => b.population - a.population);
+
+      for (const color of sortedColors) {
+        // Find similar existing cluster
+        let foundCluster = false;
+        const existingClusters = Array.from(clusters.values());
+        
+        for (const cluster of existingClusters) {
+          if (getColorDistance(color.rgb, cluster.rgb) < threshold) {
+            cluster.population += color.population;
+            // Update cluster center to weighted average
+            const totalPop = cluster.population + color.population;
+            cluster.rgb = {
+              r: Math.round((cluster.rgb.r * cluster.population + color.rgb.r * color.population) / totalPop),
+              g: Math.round((cluster.rgb.g * cluster.population + color.rgb.g * color.population) / totalPop),
+              b: Math.round((cluster.rgb.b * cluster.population + color.rgb.b * color.population) / totalPop)
+            };
+            // Update cluster HSL and hex
+            cluster.hsl = rgbToHsl(cluster.rgb.r, cluster.rgb.g, cluster.rgb.b);
+            cluster.hex = rgbToHex(cluster.rgb);
+            cluster.category = categorizeColor(cluster.hsl);
+            foundCluster = true;
+            break;
           }
+        }
+
+        // Create new cluster if no similar ones found
+        if (!foundCluster) {
+          clusters.set(color.hex, color);
+        }
+      }
+
+      // Calculate final scores
+      clusters.forEach(color => {
+        color.score = getColorScore(color);
+      });
+
+      // Filter out colors too similar to background
+      const backgroundThreshold = 20;
+      const filteredColors = Array.from(clusters.values())
+        .filter(color => getColorDistance(color.rgb, mostCommonBorderColor) > backgroundThreshold);
+
+      // Ensure color diversity by category
+      const categoryMinimums = {
+        vibrant: 2,
+        muted: 2,
+        light: 1,
+        dark: 1
+      };
+
+      const selectedColors: string[] = [];
+      const categories = Object.keys(categoryMinimums) as ColorScore['category'][];
+
+      // First, fulfill category minimums
+      categories.forEach(category => {
+        const colorsInCategory = filteredColors
+          .filter(c => c.category === category)
+          .sort((a, b) => b.score - a.score);
+        
+        const minimum = categoryMinimums[category];
+        for (let i = 0; i < minimum && i < colorsInCategory.length; i++) {
+          selectedColors.push(colorsInCategory[i].hex);
+          filteredColors.splice(filteredColors.indexOf(colorsInCategory[i]), 1);
         }
       });
 
-      // Take exactly 8 distinct colors (not counting background)
-      setKeyColors(Array.from(keyColorSet).slice(0, 8));
+      // Then fill remaining slots with highest scoring colors
+      const remainingSlots = 8 - selectedColors.length;
+      if (remainingSlots > 0) {
+        const remainingColors = filteredColors
+          .sort((a, b) => b.score - a.score)
+          .slice(0, remainingSlots);
+        
+        selectedColors.push(...remainingColors.map(c => c.hex));
+      }
+
+      setKeyColors(selectedColors);
+
+      // Create simplified version for display only
+      simplifyImage(img);
+
     } catch (error) {
       console.error('Error extracting colors:', error);
       toast({
@@ -221,7 +460,7 @@ function App() {
     } finally {
       setLoading(false);
     }
-  }, [rgbToHex, toast, simplifyImage]);
+  }, [simplifyImage, toast, rgbToHex]);
 
   // Effect to extract colors when artwork URL changes
   useEffect(() => {
