@@ -91,17 +91,7 @@ function App() {
       console.log('Detected background color:', mostCommonColor);
       setBackgroundColor(mostCommonColor);
 
-      // Extract palette colors with custom settings for Meridian
-      const v = Vibrant.from(imageUrl)
-        .quality(1) // Highest quality for better color sampling
-        .maxColorCount(32) // Increase color samples to catch subtle variations
-        .useQuantizer('mmcq'); // Using MMCQ quantizer for better subtle color detection
-
-      const palette = await v.getPalette();
-      
-      console.log('Extracted palette:', palette);
-
-      // First, analyze the image for white/near-white colors
+      // First, analyze the image for white and black areas
       const whiteAnalysisImg = new Image();
       whiteAnalysisImg.crossOrigin = 'anonymous';
       await new Promise((resolve, reject) => {
@@ -116,11 +106,13 @@ function App() {
       whiteAnalysisCanvas.height = whiteAnalysisImg.height;
       whiteAnalysisCtx.drawImage(whiteAnalysisImg, 0, 0);
 
-      // Sample pixels to find white areas
+      // Sample pixels to find white and black areas
       const imageData = whiteAnalysisCtx.getImageData(0, 0, whiteAnalysisCanvas.width, whiteAnalysisCanvas.height).data;
       let whitePixelCount = 0;
+      let blackPixelCount = 0;
       let totalPixels = 0;
-      const whiteThreshold = 245; // Threshold for considering a color as "white"
+      const whiteThreshold = 240; // Slightly lower threshold for white
+      const blackThreshold = 30; // Threshold for black
       
       for (let i = 0; i < imageData.length; i += 4) {
         const r = imageData[i];
@@ -130,12 +122,27 @@ function App() {
         
         if (brightness >= whiteThreshold) {
           whitePixelCount++;
+        } else if (brightness <= blackThreshold) {
+          blackPixelCount++;
         }
         totalPixels++;
       }
 
-      // Calculate white color percentage
+      // Calculate white and black color percentages
       const whitePercentage = (whitePixelCount / totalPixels) * 100;
+      const blackPercentage = (blackPixelCount / totalPixels) * 100;
+      
+      // For black and white images, lower the threshold for considering a color significant
+      const isMonochromatic = (whitePercentage + blackPercentage) > 90;
+      const significantThreshold = isMonochromatic ? 3 : 5; // Lower threshold for B&W images
+
+      // Get the vibrant palette
+      const v = Vibrant.from(imageUrl)
+        .quality(1)
+        .maxColorCount(32)
+        .useQuantizer('mmcq');
+
+      const palette = await v.getPalette();
       
       // Organize colors by category with priority for Meridian's style
       const standardColors = [
@@ -148,49 +155,48 @@ function App() {
       ].filter((color): color is string => {
         if (!color) return false;
         
-        // Convert hex to RGB to check color properties
         const rgb = color.match(/\w\w/g)?.map((x: string) => parseInt(x, 16)) || [];
         if (rgb.length !== 3) return false;
 
-        // Calculate color properties
         const [r, g, b] = rgb;
+        const brightness = (r + g + b) / 3;
         
-        // For Meridian's style:
-        // 1. Check if colors are too similar to already selected ones
-        const tolerance = 5;
-        for (const existingColor of keyColors) {
-          const hex = existingColor || '';
-          const existingRgb = hex.match(/\w\w/g)?.map((x: string) => parseInt(x, 16)) || [];
-          if (existingRgb.length === 3) {
-            const dr = Math.abs(r - existingRgb[0]);
-            const dg = Math.abs(g - existingRgb[1]);
-            const db = Math.abs(b - existingRgb[2]);
-            if (dr < tolerance && dg < tolerance && db < tolerance) {
-              return false;
-            }
-          }
+        // Skip colors that are too close to pure black or white
+        if (brightness >= whiteThreshold || brightness <= blackThreshold) {
+          return false;
         }
 
-        // 2. Calculate additional color properties
+        // For B&W images, be more lenient with color acceptance
+        if (isMonochromatic) {
+          return true;
+        }
+
+        // Standard color filtering for color images
         const max = Math.max(r, g, b);
         const min = Math.min(r, g, b);
         const chroma = max - min;
-        const brightness = (r + g + b) / 3;
-
-        // 3. Apply Meridian-specific filters:
-        // - Avoid colors that are too gray (low chroma)
-        // - Prefer colors within certain brightness range (excluding white)
-        // - Ensure good separation between colors
         return chroma > 5 && brightness >= 20 && brightness < whiteThreshold;
       });
 
-      // Add white as a key color if it's significant in the image
-      const significantWhiteThreshold = 5; // Minimum percentage to consider white as significant
-      const finalColors = whitePercentage >= significantWhiteThreshold
-        ? [...standardColors, '#FFFFFF']
-        : standardColors;
+      // Build the final color array including black and white when significant
+      const finalColors: string[] = [];
+      
+      // Add black if significant
+      if (blackPercentage >= significantThreshold) {
+        finalColors.push('#000000');
+      }
+      
+      // Add standard colors
+      finalColors.push(...standardColors);
+      
+      // Add white if significant
+      if (whitePercentage >= significantThreshold) {
+        finalColors.push('#FFFFFF');
+      }
 
-      console.log('Ordered colors:', finalColors);
+      console.log('Color percentages:', { white: whitePercentage, black: blackPercentage });
+      console.log('Is monochromatic:', isMonochromatic);
+      console.log('Final colors:', finalColors);
       setKeyColors(finalColors);
 
     } catch (error) {
@@ -259,14 +265,21 @@ function App() {
 
   // Update the color swatches display to show labels
   const colorCategories = [
+    'Black',
     'Vibrant',
     'Dark Vibrant',
     'Light Vibrant',
     'Muted',
     'Dark Muted',
     'Light Muted',
-    'White' // Add white category
+    'White'
   ];
+
+  const getColorLabel = (color: string, index: number) => {
+    if (color === '#000000') return 'Black';
+    if (color === '#FFFFFF') return 'White';
+    return colorCategories[index];
+  };
 
   return (
     <ChakraProvider>
@@ -428,7 +441,7 @@ function App() {
                                 textAlign="center"
                                 mb={1}
                               >
-                                {color === '#FFFFFF' ? 'White' : colorCategories[index]}
+                                {getColorLabel(color, index)}
                               </Text>
                               <Text
                                 fontSize="xs"
